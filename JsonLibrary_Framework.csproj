@@ -48,6 +48,6 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>IF "$(ConfigurationName)" == "Release" XCOPY /Y "$(TargetPath)*" "C:\Projects\EXE"</PostBuildEvent>
+    <PostBuildEvent>IF "$(ConfigurationName)" == "Release" XCOPY /Y "$(TargetPath)*" "$(ProjectDir)..\EXE"</PostBuildEvent>
   </PropertyGroup>
 </Project>

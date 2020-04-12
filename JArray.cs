@@ -1,13 +1,12 @@
 ﻿// Purpose: Provide a JSON Array class
 // Author : Scott Bakker
 // Created: 09/13/2019
+// LastMod: 04/06/2020
 
 // Notes  : The values in the list ARE ordered based on when they are added.
 //          The values are NOT sorted, and there can be duplicates.
-//        : The function ToString(JsonFormat.Indent) will return a string representation with
-//          whitespace added. Two spaces per level are used for indenting, and CRLF between lines.
-//        : The function ToString(JsonFormat.Tabs) will return a string representation with
-//          tabs added. One tab per level is used for indenting, and CRLF between lines.
+//        : The function ToStringFormatted() will return a string representation with
+//          whitespace added. Two spaces are used for indenting, and CRLF between lines.
 
 using System;
 using System.Collections;
@@ -28,13 +27,13 @@ namespace JsonLibrary
             _data = new List<object>();
         }
 
-        public JArray(JArray ja)
+        public JArray(IEnumerable list)
         {
-            // Purpose: Create new JArray object from an existing JArray
+            // Purpose: Create new JArray object with values
             // Author : Scott Bakker
             // Created: 09/13/2019
             _data = new List<object>();
-            this.Append(ja);
+            Append(list);
         }
 
         public IEnumerator<object> GetEnumerator()
@@ -62,14 +61,15 @@ namespace JsonLibrary
             _data.Add(value);
         }
 
-        public void Append(JArray ja)
+        public void Append(IEnumerable list)
         {
-            // Purpose: Append all values in the sent JArray at the end of the JArray list
+            // Purpose: Append all values in the sent IEnumerable at the end of the JArray list
             // Author : Scott Bakker
             // Created: 09/13/2019
-            if (ja != null && ja._data != null)
+            // LastMod: 04/06/2020
+            if (list != null)
             {
-                foreach (object obj in ja._data)
+                foreach (object obj in list)
                 {
                     _data.Add(obj);
                 }
@@ -103,8 +103,23 @@ namespace JsonLibrary
                 {
                     throw new ArgumentOutOfRangeException();
                 }
+                if (value != null)
+                {
+                    if (value.GetType() == string.Empty.GetType())
+                    {
+                        value = JsonRoutines.FromJsonString(value.ToString());
+                    }
+                }
                 _data[index] = value;
             }
+        }
+
+        public List<object> Items()
+        {
+            // Purpose: Get cloned list of all objects
+            // Author : Scott Bakker
+            // Created: 09/13/2019
+            return new List<object>(_data);
         }
 
         public void RemoveAt(int index)
@@ -119,19 +134,15 @@ namespace JsonLibrary
             _data.RemoveAt(index);
         }
 
-        public List<object> Items()
-        {
-            // Purpose: Get cloned list of all objects
-            // Author : Scott Bakker
-            // Created: 09/13/2019
-            return new List<object>(_data);
-        }
+        #region ToString
 
         public override string ToString()
         {
             // Purpose: Convert this JArray into a string with no formatting
             // Author : Scott Bakker
             // Created: 09/13/2019
+            // Notes  : This could be implemented as ToStringFormatted(-1) but
+            //          it is separate to get better performance.
             StringBuilder result = new StringBuilder();
             result.Append("[");
             bool addComma = false;
@@ -145,20 +156,74 @@ namespace JsonLibrary
                 {
                     addComma = true;
                 }
-                result.Append(JsonRoutines.ValueToString(obj, JsonFormat.None));
+                result.Append(JsonRoutines.ValueToString(obj));
             }
             result.Append("]");
             return result.ToString();
         }
 
-        public string ToString(JsonFormat jf)
+        public string ToStringFormatted()
         {
             // Purpose: Convert this JArray into a string with formatting
             // Author : Scott Bakker
             // Created: 10/17/2019
             int indentLevel = 0;
-            return ToString(ref indentLevel, jf);
+            return ToStringFormatted(ref indentLevel);
         }
+
+        internal string ToStringFormatted(ref int indentLevel)
+        {
+            // Purpose: Convert this JArray into a string with formatting
+            // Author : Scott Bakker
+            // Created: 10/17/2019
+            if (_data.Count == 0)
+            {
+                return "[]"; // avoid indent errors
+            }
+            StringBuilder result = new StringBuilder();
+            result.Append("[");
+            if (indentLevel >= 0)
+            {
+                indentLevel++;
+                result.AppendLine();
+            }
+            bool addComma = false;
+            foreach (object obj in _data)
+            {
+                if (addComma)
+                {
+                    result.Append(",");
+                    if (indentLevel >= 0)
+                    {
+                        result.AppendLine();
+                    }
+                }
+                else
+                {
+                    addComma = true;
+                }
+                if (indentLevel > 0)
+                {
+                    result.Append(JsonRoutines.IndentSpace(indentLevel));
+                }
+                result.Append(JsonRoutines.ValueToString(obj, ref indentLevel));
+            }
+            if (indentLevel >= 0)
+            {
+                result.AppendLine();
+                if (indentLevel > 0)
+                {
+                    indentLevel--;
+                }
+                result.Append(JsonRoutines.IndentSpace(indentLevel));
+            }
+            result.Append("]");
+            return result.ToString();
+        }
+
+        #endregion
+
+        #region Parse
 
         public static JArray Parse(string value)
         {
@@ -166,8 +231,62 @@ namespace JsonLibrary
             // Author : Scott Bakker
             // Created: 09/13/2019
             int pos = 0;
-            return Parse(ref pos, value);
+            return Parse(value, ref pos);
         }
+
+        internal static JArray Parse(string value, ref int pos)
+        {
+            // Purpose: Convert a partial string into a JArray
+            // Author : Scott Bakker
+            // Created: 09/13/2019
+            if (value == null || value.Length == 0)
+            {
+                return null;
+            }
+            JArray result = new JArray();
+            JsonRoutines.SkipWhitespace(value, ref pos);
+            if (value[pos] != '[')
+            {
+                throw new SystemException($"JSON Error: Unexpected token to start JArray: {value[pos]}");
+            }
+            pos++;
+            do
+            {
+                JsonRoutines.SkipWhitespace(value, ref pos);
+                // check for symbols
+                if (value[pos] == ']')
+                {
+                    pos++;
+                    break; // done building JArray
+                }
+                if (value[pos] == ',')
+                {
+                    // this logic ignores extra commas, but is ok
+                    pos++;
+                    continue; // next value
+                }
+                if (value[pos] == '{') // JObject
+                {
+                    JObject jo = JObject.Parse(value, ref pos);
+                    result.Add(jo);
+                    continue;
+                }
+                if (value[pos] == '[') // JArray
+                {
+                    JArray ja = JArray.Parse(value, ref pos);
+                    result.Add(ja);
+                    continue;
+                }
+                // Get value as a string, convert to object
+                string tempValue = JsonRoutines.GetToken(value, ref pos);
+                result.Add(JsonRoutines.JsonValueToObject(tempValue));
+            } while (true);
+            return result;
+        }
+
+        #endregion
+
+        #region Clone
 
         public static JArray Clone(JArray ja)
         {
@@ -182,110 +301,6 @@ namespace JsonLibrary
             return result;
         }
 
-        #region internal routines
-
-        internal string ToString(ref int indentLevel, JsonFormat jf)
-        {
-            // Purpose: Convert this JArray into a string with formatting
-            // Author : Scott Bakker
-            // Created: 10/17/2019
-            if (_data.Count == 0)
-            {
-                return "[]"; // avoid indent errors
-            }
-            StringBuilder result = new StringBuilder();
-            result.Append("[");
-            if (jf != JsonFormat.None)
-            {
-                indentLevel++;
-                result.AppendLine();
-            }
-            bool addComma = false;
-            foreach (object obj in _data)
-            {
-                if (addComma)
-                {
-                    result.Append(",");
-                    if (jf != JsonFormat.None)
-                    {
-                        result.AppendLine();
-                    }
-                }
-                else
-                {
-                    addComma = true;
-                }
-                if (indentLevel > 0)
-                {
-                    result.Append(JsonRoutines.IndentSpace(indentLevel, jf));
-                }
-                result.Append(JsonRoutines.ValueToString(obj, jf));
-            }
-            if (indentLevel > 0)
-            {
-                result.AppendLine();
-                indentLevel--;
-                if (indentLevel > 0)
-                {
-                    result.Append(JsonRoutines.IndentSpace(indentLevel, jf));
-                }
-            }
-            result.Append("]");
-            return result.ToString();
-        }
-
-        internal static JArray Parse(ref int pos, string value)
-        {
-            // Purpose: Convert a partial string into a JArray
-            // Author : Scott Bakker
-            // Created: 09/13/2019
-            if (value == null || value.Length == 0)
-            {
-                return null;
-            }
-            JArray result = new JArray();
-            JsonRoutines.SkipWhitespace(ref pos, value);
-            if (value[pos] != '[')
-            {
-                throw new SystemException($"JSON Error: Unexpected token to start JArray: {value[pos]}");
-            }
-            pos++;
-            do
-            {
-                JsonRoutines.SkipWhitespace(ref pos, value);
-                // check for symbols
-                if (value[pos] == ']')
-                {
-                    pos++;
-                    break; // done building
-                }
-                if (value[pos] == ',')
-                {
-                    // this logic ignores extra commas, but is ok
-                    pos++;
-                    continue;
-                }
-                if (value[pos] == '{') // JObject
-                {
-                    JObject jo = JObject.Parse(ref pos, value);
-                    result.Add(jo);
-                }
-                else if (value[pos] == '[') // JArray
-                {
-                    JArray ja = JArray.Parse(ref pos, value);
-                    result.Add(ja);
-                }
-                else
-                {
-                    // Get value as a string, convert to object
-                    string tempValue = JsonRoutines.GetToken(ref pos, value);
-                    result.Add(JsonRoutines.JsonValueToObject(tempValue));
-                }
-            } while (true);
-            return result;
-        }
-
         #endregion
-
     }
 }

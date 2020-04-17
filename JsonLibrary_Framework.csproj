@@ -41,6 +41,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CharReader.cs" />
     <Compile Include="JArray.cs" />
     <Compile Include="JObject.cs" />
     <Compile Include="JsonRoutines.cs" />
